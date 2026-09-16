@@ -1,0 +1,174 @@
+name: Test ePlanner relay scripts on Windows
+
+on:
+  workflow_dispatch:
+  push:
+
+jobs:
+  syntax-and-logic:
+    name: Syntax + batch logic (Windows PowerShell 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show PowerShell version
+        shell: powershell
+        run: $PSVersionTable | Format-List
+
+      - name: Parse both scripts
+        shell: powershell
+        run: |
+          $failed = $false
+          foreach ($f in @("scripts\relay-intranet-to-internet.ps1", "scripts\upload-internet-to-cft.ps1")) {
+            $errors = $null
+            $full = Join-Path $PWD $f
+            [System.Management.Automation.Language.Parser]::ParseFile($full, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors.Count -eq 0) {
+              Write-Host "PARSE OK: $f"
+            } else {
+              Write-Host "PARSE ERRORS in ${f}:"
+              $errors | ForEach-Object { Write-Host ("  line {0}: {1}" -f $_.Extent.StartLineNumber, $_.Message) }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Batch selection logic
+        shell: powershell
+        run: |
+          $d = "$env:RUNNER_TEMP\eplanner"
+          New-Item -ItemType Directory -Force -Path $d | Out-Null
+          # complete batch: 2 parts + zip ; incomplete batch: 2 parts only ; unrelated file
+          "x" | Out-File "$d\RTMS_20260916_020000.z01"
+          "x" | Out-File "$d\RTMS_20260916_020000.z02"
+          "x" | Out-File "$d\RTMS_20260916_020000.zip"
+          "x" | Out-File "$d\RTMS_20260917_020000.z01"
+          "x" | Out-File "$d\RTMS_20260917_020000.z02"
+          "x" | Out-File "$d\notes.txt"
+
+          $allFiles = Get-ChildItem -Path $d -File | Where-Object { $_.Name -match '^RTMS_.*\.(zip|z\d+)$' }
+          $sendFiles = @()
+          foreach ($group in ($allFiles | Group-Object { $_.Name -replace '\.(zip|z\d+)$', '' })) {
+            if ($group.Group.Extension -contains '.zip') { $sendFiles += $group.Group }
+            else { Write-Host "SKIP: batch $($group.Name) has no .zip yet" }
+          }
+          $sendFiles = $sendFiles | Sort-Object @{Expression = { $_.Extension -eq '.zip' }}, Name
+
+          Write-Host "--- selected, in upload order ---"
+          $sendFiles | ForEach-Object { Write-Host "  $($_.Name)" }
+
+          $names = @($sendFiles | ForEach-Object { $_.Name })
+          $expected = @("RTMS_20260916_020000.z01","RTMS_20260916_020000.z02","RTMS_20260916_020000.zip")
+          if (Compare-Object $names $expected -SyncWindow 0) {
+            Write-Host "FAIL: selection or ordering is wrong"; exit 1
+          }
+          Write-Host "PASS: complete batch selected, parts before .zip, incomplete batch skipped, notes.txt ignored"
+
+  winscp-end-to-end:
+    name: Real WinSCP transfer (tests argument quoting on 5.1)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install WinSCP
+        shell: powershell
+        run: |
+          choco install winscp -y --no-progress
+          $winscp = "C:\Program Files (x86)\WinSCP\winscp.com"
+          if (-not (Test-Path $winscp)) { Write-Host "winscp.com not found"; exit 1 }
+          Write-Host "WinSCP installed at $winscp"
+
+      - name: Start local OpenSSH server (acts as the destination SFTP)
+        shell: powershell
+        run: |
+          $cap = Get-WindowsCapability -Online -Name OpenSSH.Server*
+          if ($cap.State -ne "Installed") { Add-WindowsCapability -Online -Name $cap.Name }
+          Start-Service sshd
+          Set-Service -Name sshd -StartupType Automatic
+          Get-Service sshd | Format-List Name, Status
+
+      - name: Create key pair and authorize it
+        shell: powershell
+        run: |
+          $keyDir = "C:\sftptest"
+          New-Item -ItemType Directory -Force -Path $keyDir | Out-Null
+          ssh-keygen -t ed25519 -f "$keyDir\testkey" -N '""' -C "eplanner-test"
+
+          # runner user is an administrator, so the key goes in administrators_authorized_keys
+          $authFile = "C:\ProgramData\ssh\administrators_authorized_keys"
+          Copy-Item "$keyDir\testkey.pub" $authFile -Force
+          $acl = Get-Acl $authFile
+          $acl.SetAccessRuleProtection($true, $false)
+          $acl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule("Administrators","FullControl","Allow")))
+          $acl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule("SYSTEM","FullControl","Allow")))
+          Set-Acl -Path $authFile -AclObject $acl
+          Restart-Service sshd
+
+          # convert to .ppk for WinSCP
+          & "C:\Program Files (x86)\WinSCP\winscp.com" /keygen "$keyDir\testkey" /output="$keyDir\testkey.ppk"
+          if (-not (Test-Path "$keyDir\testkey.ppk")) { Write-Host "ppk conversion failed"; exit 1 }
+          Write-Host "key ready"
+
+      - name: Work out the host key fingerprint in WinSCP format
+        shell: powershell
+        run: |
+          $line = ssh-keygen -lf C:\ProgramData\ssh\ssh_host_ed25519_key.pub
+          # format: "256 SHA256:xxxx comment (ED25519)"
+          $parts = $line -split '\s+'
+          $hostKey = "ssh-ed25519 $($parts[0]) $($parts[1])"
+          Write-Host "host key: $hostKey"
+          "HOSTKEY=$hostKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Prepare source and destination folders
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "C:\sftptest\Inbound" | Out-Null
+          New-Item -ItemType Directory -Force -Path "C:\sftptest\Dest" | Out-Null
+          New-Item -ItemType Directory -Force -Path "C:\sftptest\Logs" | Out-Null
+          "data" | Out-File "C:\sftptest\Inbound\RTMS_20260916_020000.z01"
+          "data" | Out-File "C:\sftptest\Inbound\RTMS_20260916_020000.z02"
+          "data" | Out-File "C:\sftptest\Inbound\RTMS_20260916_020000.zip"
+          "data" | Out-File "C:\sftptest\Inbound\RTMS_20260917_020000.z01"
+          Get-ChildItem C:\sftptest\Inbound | Select-Object Name
+
+      - name: Patch the shipped script with test values and run it
+        shell: powershell
+        run: |
+          $src = Get-Content "scripts\relay-intranet-to-internet.ps1" -Raw
+          $src = $src -replace '(?m)^\$logDir\s*=.*$',      '$logDir      = "C:\sftptest\Logs"'
+          $src = $src -replace '(?m)^\$localDir\s*=.*$',    '$localDir    = "C:\sftptest\Inbound"'
+          $src = $src -replace '(?m)^\$destHost\s*=.*$',    '$destHost    = "127.0.0.1"'
+          $src = $src -replace '(?m)^\$destUser\s*=.*$',    ('$destUser    = "' + $env:USERNAME + '"')
+          $src = $src -replace '(?m)^\$destKey\s*=.*$',     '$destKey     = "C:\sftptest\testkey.ppk"'
+          $src = $src -replace '(?m)^\$destHostKey\s*=.*$', ('$destHostKey = "' + $env:HOSTKEY + '"')
+          $src = $src -replace '(?m)^\$destDir\s*=.*$',     '$destDir     = "/C:/sftptest/Dest"'
+          Set-Content -Path "run-test.ps1" -Value $src -Encoding UTF8
+
+          Write-Host "--- config block actually used ---"
+          Get-Content run-test.ps1 | Select-Object -Skip 10 -First 13
+
+          Write-Host "--- running ---"
+          & .\run-test.ps1
+          Write-Host "script exit code: $LASTEXITCODE"
+
+      - name: Verify the transfer
+        shell: powershell
+        run: |
+          Write-Host "--- destination ---"
+          Get-ChildItem C:\sftptest\Dest | Select-Object Name, Length
+          Write-Host "--- source (should only have the incomplete batch left) ---"
+          Get-ChildItem C:\sftptest\Inbound | Select-Object Name
+
+          $dest = @(Get-ChildItem C:\sftptest\Dest | ForEach-Object { $_.Name }) | Sort-Object
+          $expected = @("RTMS_20260916_020000.z01","RTMS_20260916_020000.z02","RTMS_20260916_020000.zip")
+          if (Compare-Object $dest $expected) { Write-Host "FAIL: destination contents unexpected"; exit 1 }
+
+          $left = @(Get-ChildItem C:\sftptest\Inbound | ForEach-Object { $_.Name })
+          if ($left -ne "RTMS_20260917_020000.z01") { Write-Host "FAIL: source cleanup unexpected: $left"; exit 1 }
+
+          Write-Host "PASS: complete batch transferred and removed from source; incomplete batch left in place"
+
+      - name: Show WinSCP log on failure
+        if: failure()
+        shell: powershell
+        run: Get-ChildItem C:\sftptest\Logs -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "=== $($_.Name) ==="; Get-Content $_.FullName | Select-Object -Last 60 }
