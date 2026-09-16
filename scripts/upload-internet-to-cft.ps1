@@ -19,8 +19,10 @@ $destHost    = "sftp-pw.cft.stack.gov.sg"      # CFT SFTP (from CFT onboarding)
 $destPort    = 22
 $destUser    = "<CFT_USERNAME>"                # from the CFT credentials provided earlier
 $destKey     = "<PATH_TO_PPK_FOR_CFT_ACCOUNT>" # CFT key converted to .ppk (WinSCP / PuTTYgen)
-$destHostKey = "<CFT_HOST_KEY>"                # format: algorithm bits SHA256:fingerprint
-                                               # e.g. ssh-rsa 4096 SHA256:<fingerprint>
+$destHostKey = "<HOST_KEY>"                # format: <algorithm> <bits> <fingerprint>
+                                               # WITHOUT the "SHA256:" prefix, e.g.
+                                               #   ssh-rsa 4096 KwDTmSPbMmeZ+nKd....
+                                               # WinSCP shows it on first manual connection
 $destDir     = "<CFT_WORKFLOW_ID_FOLDER>"      # the Workflow ID folder on CFT
 # -----------------------------------------------------------------------------
 

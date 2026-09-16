@@ -18,7 +18,10 @@ $destHost    = "<INTERNET_SFTP_HOST>"          # NPUCMSFTPSVRI01 (UAT) / NPCMSFT
 $destPort    = 22
 $destUser    = "gcci-uat-rtms-eplanner"        # PROD: gcci-prd-rtms-eplanner
 $destKey     = "<PATH_TO_PPK_FOR_INTERNET_ACCOUNT>"
-$destHostKey = "<INTERNET_HOST_KEY>"
+$destHostKey = "<HOST_KEY>"                # format: <algorithm> <bits> <fingerprint>
+                                               # WITHOUT the "SHA256:" prefix, e.g.
+                                               #   ssh-rsa 4096 KwDTmSPbMmeZ+nKd....
+                                               # WinSCP shows it on first manual connection
 $destDir     = "<EPLANNER_DIR_ON_INTERNET>"
 # -----------------------------------------------------------------------------
 
