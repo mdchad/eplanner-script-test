@@ -40,12 +40,23 @@ if ($sendFiles.Count -eq 0) { Write-Output "Nothing to transfer."; exit 0 }
 # 2. Upload to the Internet SFTP - split parts first, .zip last; delete local file on success
 $sendFiles = $sendFiles | Sort-Object @{Expression = { $_.Extension -eq '.zip' }}, Name
 
-$commands = @("open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -hostkey=""$destHostKey""")
-$commands += "cd ""$destDir"""
-foreach ($file in $sendFiles) { $commands += "put -delete ""$($file.FullName)""" }
+# WinSCP commands are written to a script file rather than passed as arguments:
+# Windows PowerShell does not preserve embedded quotes when calling a native program,
+# which corrupts the -hostkey and put arguments. The generated file also shows exactly
+# what WinSCP was asked to do, which helps when diagnosing a failed run.
+$commandFile = Join-Path $logDir "relay_$runId.txt"
 
-$arguments = @("/ini=nul", "/log=$logDir\relay_$runId.log", "/command") + $commands + @("exit")
-& $winscp @arguments
+$lines = @()
+$lines += "option batch abort"
+$lines += "option confirm off"
+$lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -hostkey=""$destHostKey"""
+$lines += "cd ""$destDir"""
+foreach ($file in $sendFiles) { $lines += "put -delete ""$($file.FullName)""" }
+$lines += "exit"
+
+Set-Content -Path $commandFile -Value $lines -Encoding ASCII
+
+& $winscp "/ini=nul" "/log=$logDir\relay_$runId.log" "/script=$commandFile"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Output "ERROR: upload to $destHost failed - files left in $localDir for retry on next run (see relay_$runId.log)"

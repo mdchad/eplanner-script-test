@@ -113,9 +113,10 @@ jobs:
         shell: powershell
         run: |
           $line = ssh-keygen -lf C:\ProgramData\ssh\ssh_host_ed25519_key.pub
-          # format: "256 SHA256:xxxx comment (ED25519)"
+          # ssh-keygen prints "256 SHA256:xxxx comment (ED25519)", but WinSCP/PuTTY
+          # report ed25519 as 255 bits, so the bit count is taken from WinSCP's convention
           $parts = $line -split '\s+'
-          $hostKey = "ssh-ed25519 $($parts[0]) $($parts[1])"
+          $hostKey = "ssh-ed25519 255 $($parts[1])"
           Write-Host "host key: $hostKey"
           "HOSTKEY=$hostKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
@@ -150,6 +151,11 @@ jobs:
           Write-Host "--- running ---"
           & .\run-test.ps1
           Write-Host "script exit code: $LASTEXITCODE"
+
+      - name: Show the generated WinSCP command file
+        if: always()
+        shell: powershell
+        run: Get-ChildItem C:\sftptest\Logs -Filter *.txt | ForEach-Object { Write-Host "=== $($_.Name) ==="; Get-Content $_.FullName }
 
       - name: Verify the transfer
         shell: powershell
