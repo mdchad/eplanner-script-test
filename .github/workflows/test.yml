@@ -109,16 +109,40 @@ jobs:
           if (-not (Test-Path "$keyDir\testkey.ppk")) { Write-Host "ppk conversion failed"; exit 1 }
           Write-Host "key ready"
 
-      - name: Work out the host key fingerprint in WinSCP format
+      - name: Find which -hostkey format WinSCP accepts
         shell: powershell
         run: |
           $line = ssh-keygen -lf C:\ProgramData\ssh\ssh_host_ed25519_key.pub
-          # ssh-keygen prints "256 SHA256:xxxx comment (ED25519)", but WinSCP/PuTTY
-          # report ed25519 as 255 bits, so the bit count is taken from WinSCP's convention
-          $parts = $line -split '\s+'
-          $hostKey = "ssh-ed25519 255 $($parts[1])"
-          Write-Host "host key: $hostKey"
-          "HOSTKEY=$hostKey" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          $fp   = ($line -split '\s+')[1]           # SHA256:xxxx
+          $bare = $fp -replace '^SHA256:', ''       # xxxx
+
+          $variants = @(
+            $fp,
+            "ssh-ed25519 255 $fp",
+            "ssh-ed25519 255 $bare"
+          )
+
+          $winner = $null
+          foreach ($v in $variants) {
+            $probe = "C:\sftptest\probe.txt"
+            @(
+              "option batch abort",
+              "open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -hostkey=""$v""",
+              "exit"
+            ) | Set-Content -Path $probe -Encoding ASCII
+
+            & "C:\Program Files (x86)\WinSCP\winscp.com" "/ini=nul" "/script=$probe" | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "ACCEPTED: $v"
+              if (-not $winner) { $winner = $v }
+            } else {
+              Write-Host "rejected: $v"
+            }
+          }
+
+          if (-not $winner) { Write-Host "no -hostkey format was accepted"; exit 1 }
+          Write-Host "using: $winner"
+          "HOSTKEY=$winner" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Prepare source and destination folders
         shell: powershell
