@@ -55,7 +55,10 @@ $lines += "option batch abort"
 $lines += "option confirm off"
 $lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -hostkey=""$destHostKey"""
 $lines += "cd ""$destDir"""
-foreach ($file in $sendFiles) { $lines += "put -delete ""$($file.FullName)""" }
+# -nopreservetime -nopermissions: CFT does not support setting timestamps/permissions
+# after upload (SETSTAT unsupported). Without these, WinSCP reports the upload as failed
+# even though the file arrived, and -delete is skipped so the file is re-sent every run.
+foreach ($file in $sendFiles) { $lines += "put -delete -nopreservetime -nopermissions ""$($file.FullName)""" }
 $lines += "exit"
 
 Set-Content -Path $commandFile -Value $lines -Encoding ASCII

@@ -198,6 +198,32 @@ jobs:
 
           Write-Host "PASS: complete batch transferred and removed from source; incomplete batch left in place"
 
+      - name: Run the CFT script too (same local server) to validate its put flags
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "C:\sftptest\Inbound2", "C:\sftptest\Dest2" | Out-Null
+          "data" | Out-File "C:\sftptest\Inbound2\RTMS_20260918_020000.z01"
+          "data" | Out-File "C:\sftptest\Inbound2\RTMS_20260918_020000.zip"
+
+          $src = Get-Content "scripts\upload-internet-to-cft.ps1" -Raw
+          $src = $src -replace '(?m)^\$logDir\s*=.*$',      '$logDir      = "C:\sftptest\Logs"'
+          $src = $src -replace '(?m)^\$localDir\s*=.*$',    '$localDir    = "C:\sftptest\Inbound2"'
+          $src = $src -replace '(?m)^\$destHost\s*=.*$',    '$destHost    = "127.0.0.1"'
+          $src = $src -replace '(?m)^\$destUser\s*=.*$',    ('$destUser    = "' + $env:USERNAME + '"')
+          $src = $src -replace '(?m)^\$destKey\s*=.*$',     '$destKey     = "C:\sftptest\testkey.ppk"'
+          $src = $src -replace '(?m)^\$destHostKey\s*=.*$', ('$destHostKey = "' + $env:HOSTKEY + '"')
+          $src = $src -replace '(?m)^\$destDir\s*=.*$',     '$destDir     = "/C:/sftptest/Dest2"'
+          Set-Content -Path "run-cft-test.ps1" -Value $src -Encoding UTF8
+
+          & .\run-cft-test.ps1
+          Write-Host "cft script exit code: $LASTEXITCODE"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+          $dest = @(Get-ChildItem C:\sftptest\Dest2 | ForEach-Object { $_.Name }) | Sort-Object
+          if (Compare-Object $dest @("RTMS_20260918_020000.z01","RTMS_20260918_020000.zip")) { Write-Host "FAIL: Dest2 contents"; exit 1 }
+          if (@(Get-ChildItem C:\sftptest\Inbound2).Count -ne 0) { Write-Host "FAIL: Inbound2 not emptied"; exit 1 }
+          Write-Host "PASS: CFT script with -nopreservetime -nopermissions transferred and cleaned up"
+
       - name: Show WinSCP log on failure
         if: failure()
         shell: powershell
