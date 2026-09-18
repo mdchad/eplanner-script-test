@@ -59,8 +59,8 @@ $lines += "option batch abort"
 $lines += "option confirm off"
 # password is given as a separate -password parameter, never inside the sftp:// URL:
 # characters such as @ / : # % in a password break the URL, but are fine here
-$pw = $destPassword -replace '"', '""'   # a literal " inside the password must be doubled for WinSCP
-$lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -password=""$pw"" -hostkey=""$destHostKey"""
+# (tested: @ / : # % & space ' $ \ are all fine in -password; only a literal " is not supported)
+$lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -password=""$destPassword"" -hostkey=""$destHostKey"""
 $lines += "cd ""$destDir"""
 # -nopreservetime -nopermissions: CFT does not support setting timestamps/permissions
 # after upload (SETSTAT unsupported). Without these, WinSCP reports the upload as failed

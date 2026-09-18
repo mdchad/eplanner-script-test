@@ -22,7 +22,15 @@ since local testing on macOS/Linux cannot cover Windows-specific behaviour.
 The point of job 2 is to prove the `& $winscp @arguments` call survives Windows
 PowerShell 5.1 argument passing — arguments contain both spaces and embedded quotes
 (`-hostkey="ssh-ed25519 256 SHA256:..."`), which 5.1 is known to handle poorly.
-If it fails here, the scripts should switch to WinSCP's `/script=<file>` form.
+The scripts use WinSCP's `/script=<file>` form for exactly this reason (the `/command`
+form failed here).
+
+**Verified findings**
+- `-hostkey` must be `<algorithm> <bits> <fingerprint>` with the `SHA256:` prefix removed
+- CFT requires public key **and** password; the password goes in a separate `-password`
+  parameter, never inside the `sftp://` URL
+- `-password` handles `@ / : # % & space ' $ \` verbatim; only a literal `"` is unsupported
+- CFT rejects SETSTAT, so the CFT upload uses `-nopreservetime -nopermissions`
 
 ## Running it
 
