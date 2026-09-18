@@ -19,6 +19,10 @@ $destHost    = "sftp-pw.cft.stack.gov.sg"      # CFT SFTP (from CFT onboarding)
 $destPort    = 22
 $destUser    = "<CFT_USERNAME>"                # from the CFT credentials provided earlier
 $destKey     = "<PATH_TO_PPK_FOR_CFT_ACCOUNT>" # CFT key converted to .ppk (WinSCP / PuTTYgen)
+$destPassword = "<CFT_PASSWORD>"                # CFT requires key AND password. Keep the
+                                               # password exactly as issued - do NOT escape
+                                               # or URL-encode it; it is passed separately
+                                               # from the URL so special characters are safe
 $destHostKey = "<HOST_KEY>"                # format: <algorithm> <bits> <fingerprint>
                                                # WITHOUT the "SHA256:" prefix, e.g.
                                                #   ssh-rsa 4096 KwDTmSPbMmeZ+nKd....
@@ -53,7 +57,10 @@ $commandFile = Join-Path $logDir "cft_$runId.txt"
 $lines = @()
 $lines += "option batch abort"
 $lines += "option confirm off"
-$lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -hostkey=""$destHostKey"""
+# password is given as a separate -password parameter, never inside the sftp:// URL:
+# characters such as @ / : # % in a password break the URL, but are fine here
+$pw = $destPassword -replace '"', '""'   # a literal " inside the password must be doubled for WinSCP
+$lines += "open sftp://$destUser@$destHost`:$destPort/ -privatekey=""$destKey"" -password=""$pw"" -hostkey=""$destHostKey"""
 $lines += "cd ""$destDir"""
 # -nopreservetime -nopermissions: CFT does not support setting timestamps/permissions
 # after upload (SETSTAT unsupported). Without these, WinSCP reports the upload as failed

@@ -198,6 +198,16 @@ jobs:
 
           Write-Host "PASS: complete batch transferred and removed from source; incomplete batch left in place"
 
+      - name: Require key AND password on sshd (mirrors CFT), with a special-character password
+        shell: powershell
+        run: |
+          $pw = 'P@ss/w:rd#%25&x"y'
+          net user $env:USERNAME "$pw"
+          Add-Content -Path C:\ProgramData\ssh\sshd_config -Value "`nAuthenticationMethods publickey,password`nPasswordAuthentication yes"
+          Restart-Service sshd
+          "CFTPW=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "sshd now requires publickey,password"
+
       - name: Run the CFT script too (same local server) to validate its put flags
         shell: powershell
         run: |
@@ -213,7 +223,13 @@ jobs:
           $src = $src -replace '(?m)^\$destKey\s*=.*$',     '$destKey     = "C:\sftptest\testkey.ppk"'
           $src = $src -replace '(?m)^\$destHostKey\s*=.*$', ('$destHostKey = "' + $env:HOSTKEY + '"')
           $src = $src -replace '(?m)^\$destDir\s*=.*$',     '$destDir     = "/C:/sftptest/Dest2"'
+          # PowerShell single-quoted literal: only ' needs doubling, everything else is verbatim
+          $pwLiteral = "'" + $env:CFTPW.Replace("'", "''") + "'"
+          $src = $src -replace '(?m)^\$destPassword\s*=.*$', ('$destPassword = ' + $pwLiteral)
           Set-Content -Path "run-cft-test.ps1" -Value $src -Encoding UTF8
+          Write-Host "--- password line used ---"
+          Get-Content run-cft-test.ps1 | Select-String 'destPassword ='
+
 
           & .\run-cft-test.ps1
           Write-Host "cft script exit code: $LASTEXITCODE"
