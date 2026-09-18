@@ -230,8 +230,34 @@ jobs:
           ) | Set-Content -Path C:\sftptest\ctl2.txt -Encoding ASCII
           & "C:\Program Files (x86)\WinSCP\winscp.com" "/ini=nul" "/script=C:\sftptest\ctl2.txt" "/log=C:\sftptest\Logs\ctl2.log"
           Write-Host "CONTROL 2 (special-char password, -password param): exit $LASTEXITCODE"
-          Write-Host "--- ctl2 open line ---"
-          Get-Content C:\sftptest\ctl2.txt | Select-String '^open' | ForEach-Object { $_.Line -replace '-password="[^"]*(""[^"]*)*"', '-password="<redacted>"' }
+
+          # --- bisect: which character breaks WinSCP's -password parsing? ---
+          $cases = [ordered]@{
+            "at"      = "Pa@ss1";
+            "slash"   = "Pa/ss1";
+            "colon"   = "Pa:ss1";
+            "hash"    = "Pa#ss1";
+            "percent" = "Pa%ss1";
+            "amp"     = "Pa&ss1";
+            "dquote"  = "Pa`"ss1";
+            "space"   = "Pa ss1";
+            "squote"  = "Pa'ss1";
+            "dollar"  = "Pa`$ss1";
+            "bslash"  = "Pa\ss1"
+          }
+          foreach ($name in $cases.Keys) {
+            $cpw = $cases[$name]
+            net user $env:USERNAME "$cpw" | Out-Null
+            $cpwq = $cpw -replace '"', '""'
+            @(
+              "option batch abort",
+              "open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -password=""$cpwq"" -hostkey=""$env:HOSTKEY""",
+              "exit"
+            ) | Set-Content -Path "C:\sftptest\bisect_$name.txt" -Encoding ASCII
+            & "C:\Program Files (x86)\WinSCP\winscp.com" "/ini=nul" "/script=C:\sftptest\bisect_$name.txt" | Out-Null
+            if ($LASTEXITCODE -eq 0) { Write-Host "BISECT ${name}: OK" } else { Write-Host "BISECT ${name}: FAIL" }
+          }
+          net user $env:USERNAME "$pw" | Out-Null
 
       - name: Run the CFT script too (same local server) to validate its put flags
         shell: powershell
