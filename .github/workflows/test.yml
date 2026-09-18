@@ -208,6 +208,31 @@ jobs:
           "CFTPW=$pw" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "sshd now requires publickey,password"
 
+          # --- control tests: is password auth itself working on this server? ---
+          # 1. a simple password with no special characters, via a hand-written script file
+          $simple = "SimplePass123"
+          net user $env:USERNAME "$simple"
+          @(
+            "option batch abort",
+            "open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -password=""$simple"" -hostkey=""$env:HOSTKEY""",
+            "exit"
+          ) | Set-Content -Path C:\sftptest\ctl1.txt -Encoding ASCII
+          & "C:\Program Files (x86)\WinSCP\winscp.com" "/ini=nul" "/script=C:\sftptest\ctl1.txt" "/log=C:\sftptest\Logs\ctl1.log"
+          Write-Host "CONTROL 1 (simple password, -password param): exit $LASTEXITCODE"
+
+          # 2. the special-character password, doubled quotes, via -password param
+          net user $env:USERNAME "$pw"
+          $pwq = $pw -replace '"', '""'
+          @(
+            "option batch abort",
+            "open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -password=""$pwq"" -hostkey=""$env:HOSTKEY""",
+            "exit"
+          ) | Set-Content -Path C:\sftptest\ctl2.txt -Encoding ASCII
+          & "C:\Program Files (x86)\WinSCP\winscp.com" "/ini=nul" "/script=C:\sftptest\ctl2.txt" "/log=C:\sftptest\Logs\ctl2.log"
+          Write-Host "CONTROL 2 (special-char password, -password param): exit $LASTEXITCODE"
+          Write-Host "--- ctl2 open line ---"
+          Get-Content C:\sftptest\ctl2.txt | Select-String '^open' | ForEach-Object { $_.Line -replace '-password="[^"]*(""[^"]*)*"', '-password="<redacted>"' }
+
       - name: Run the CFT script too (same local server) to validate its put flags
         shell: powershell
         run: |
