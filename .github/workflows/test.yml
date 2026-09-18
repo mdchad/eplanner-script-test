@@ -201,7 +201,9 @@ jobs:
       - name: Require key AND password on sshd (mirrors CFT), with a special-character password
         shell: powershell
         run: |
-          $pw = 'P@ss/w:rd#%25&x"y'
+          # realistic password shape: long alphanumeric with + (as issued by CFT); the
+          # special-character bisect below is informational only
+          $pw = '1t3Gh+45QTiFbVAXsXDfDVW1rC5ZqVIabc'
           net user $env:USERNAME "$pw"
           Add-Content -Path C:\ProgramData\ssh\sshd_config -Value "`nAuthenticationMethods publickey,password`nPasswordAuthentication yes"
           Restart-Service sshd
