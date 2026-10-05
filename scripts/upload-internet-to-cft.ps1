@@ -65,7 +65,7 @@ $lines += "cd ""$destDir"""
 # -nopreservetime -nopermissions: CFT does not support setting timestamps/permissions
 # after upload (SETSTAT unsupported). Without these, WinSCP reports the upload as failed
 # even though the file arrived, and -delete is skipped so the file is re-sent every run.
-foreach ($file in $sendFiles) { $lines += "put -delete -nopreservetime -nopermissions -resumesupport=off ""$($file.FullName)"" -rawtransfersettings ResumeSupport=1" }
+foreach ($file in $sendFiles) { $lines += "put -delete -nopreservetime -nopermissions -resumesupport=off ""$($file.FullName)""" }
 $lines += "exit"
 
 Set-Content -Path $commandFile -Value $lines -Encoding ASCII
