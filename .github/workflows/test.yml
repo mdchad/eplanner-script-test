@@ -292,8 +292,8 @@ jobs:
           if (Compare-Object $dest @("RTMS_20260918_020000.z01","RTMS_20260918_020000.zip")) { Write-Host "FAIL: Dest2 contents"; exit 1 }
           if (@(Get-ChildItem C:\sftptest\Inbound2).Count -ne 0) { Write-Host "FAIL: Inbound2 not emptied"; exit 1 }
 
-          # Resume support must be off for the whole session: WinSCP must never use a .filepart temp name.
-          $cmdFile = Get-ChildItem C:\sftptest\Logs -Filter cft_*.txt | Sort-Object LastWriteTime | Select-Object -Last 1
+          # -resumesupport=off on put: WinSCP must write the final name directly, never a .filepart temp name.
+| Sort-Object LastWriteTime | Select-Object -Last 1
           $cmd = Get-Content $cmdFile.FullName -Raw
           if ($cmd -notmatch '(?m)^option resumesupport off\s*$') { Write-Host "FAIL: generated command file lacks 'option resumesupport off'"; Write-Host $cmd; exit 1 }
           $logFile = Get-ChildItem C:\sftptest\Logs -Filter cft_*.log | Sort-Object LastWriteTime | Select-Object -Last 1
