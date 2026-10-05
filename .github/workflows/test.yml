@@ -300,6 +300,29 @@ jobs:
           Write-Host ("WinSCP version: " + ((Get-Content $logFile.FullName -TotalCount 3) -join " | "))
           Write-Host "PASS: CFT script transferred, cleaned up, and wrote directly to the final name (no .filepart)"
 
+      - name: Probe resume/temp-name settings (INI keys + put behaviour)
+        shell: powershell
+        run: |
+          $w = "C:\Program Files (x86)\WinSCP\winscp.com"
+          New-Item -ItemType Directory -Force -Path "C:\sftptest\Probe", "C:\sftptest\ProbeDest" | Out-Null
+          $big = "C:\sftptest\Probe\big.bin"; $fsx = [System.IO.File]::Create($big); $fsx.SetLength(300KB); $fsx.Close()
+          # A. default settings: does a 300 KB upload use .filepart? (threshold default 100 KB)
+          @("option batch abort","option confirm off","open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -hostkey=""$env:HOSTKEY""","put ""$big"" /C:/sftptest/ProbeDest/a.bin","exit") | Set-Content C:\sftptest\probeA.txt -Encoding ASCII
+          & $w "/ini=nul" "/log=C:\sftptest\probeA.log" "/script=C:\sftptest\probeA.txt" | Out-Null
+          Write-Host ("A default:            filepart=" + (Select-String -Path C:\sftptest\probeA.log -Pattern "filepart" -Quiet))
+          # B. -resumesupport=off
+          @("option batch abort","option confirm off","open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -hostkey=""$env:HOSTKEY""","put -resumesupport=off ""$big"" /C:/sftptest/ProbeDest/b.bin","exit") | Set-Content C:\sftptest\probeB.txt -Encoding ASCII
+          & $w "/ini=nul" "/log=C:\sftptest\probeB.log" "/script=C:\sftptest\probeB.txt" | Out-Null
+          Write-Host ("B -resumesupport=off: filepart=" + (Select-String -Path C:\sftptest\probeB.log -Pattern "filepart" -Quiet))
+          # C. write a real INI with resume off via a saved config, then dump the CopyParam keys
+          $ini = "C:\sftptest\probe.ini"
+          @("option batch abort","option confirm off","open sftp://$env:USERNAME@127.0.0.1:22/ -privatekey=""C:\sftptest\testkey.ppk"" -hostkey=""$env:HOSTKEY""","put -resumesupport=off ""$big"" /C:/sftptest/ProbeDest/c.bin","exit") | Set-Content C:\sftptest\probeC.txt -Encoding ASCII
+          & $w "/ini=$ini" "/log=C:\sftptest\probeC.log" "/script=C:\sftptest\probeC.txt" | Out-Null
+          Write-Host "--- INI keys mentioning Resume (from WinSCP-written ini) ---"
+          if (Test-Path $ini) { Select-String -Path $ini -Pattern "Resume" | ForEach-Object { $_.Line } } else { Write-Host "(no ini written)" }
+          Write-Host "--- log lines mentioning resume/temporary in probe B ---"
+          Select-String -Path C:\sftptest\probeB.log -Pattern "esume|emporary|filepart" | Select-Object -First 8 | ForEach-Object { $_.Line }
+
       - name: Show WinSCP log on failure
         if: failure()
         shell: powershell
