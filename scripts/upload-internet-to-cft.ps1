@@ -57,6 +57,10 @@ $commandFile = Join-Path $logDir "cft_$runId.txt"
 $lines = @()
 $lines += "option batch abort"
 $lines += "option confirm off"
+# Turn resume support off for the whole session: CFT refuses to rename the temporary
+# .filepart file to the final name ("Permission denied"), so WinSCP must write the final
+# name directly. The per-put switch alone was not honoured on the NParks server.
+$lines += "option resumesupport off"
 # password is given as a separate -password parameter, never inside the sftp:// URL:
 # characters such as @ / : # % in a password break the URL, but are fine here
 # (tested: @ / : # % & space ' $ \ are all fine in -password; only a literal " is not supported)
@@ -65,7 +69,7 @@ $lines += "cd ""$destDir"""
 # -nopreservetime -nopermissions: CFT does not support setting timestamps/permissions
 # after upload (SETSTAT unsupported). Without these, WinSCP reports the upload as failed
 # even though the file arrived, and -delete is skipped so the file is re-sent every run.
-foreach ($file in $sendFiles) { $lines += "put -delete -nopreservetime -nopermissions ""$($file.FullName)""" }
+foreach ($file in $sendFiles) { $lines += "put -delete -nopreservetime -nopermissions -resumesupport=off ""$($file.FullName)""" }
 $lines += "exit"
 
 Set-Content -Path $commandFile -Value $lines -Encoding ASCII
