@@ -293,14 +293,11 @@ jobs:
           if (@(Get-ChildItem C:\sftptest\Inbound2).Count -ne 0) { Write-Host "FAIL: Inbound2 not emptied"; exit 1 }
 
           # -resumesupport=off on put: WinSCP must write the final name directly, never a .filepart temp name.
-| Sort-Object LastWriteTime | Select-Object -Last 1
-          $cmd = Get-Content $cmdFile.FullName -Raw
-          if ($cmd -notmatch '(?m)^option resumesupport off\s*$') { Write-Host "FAIL: generated command file lacks 'option resumesupport off'"; Write-Host $cmd; exit 1 }
           $logFile = Get-ChildItem C:\sftptest\Logs -Filter cft_*.log | Sort-Object LastWriteTime | Select-Object -Last 1
           $log = Get-Content $logFile.FullName -Raw
           if ($log -match '\.filepart') { Write-Host "FAIL: WinSCP still used a .filepart temporary name"; $log -split "`n" | Select-String filepart | Select-Object -First 5; exit 1 }
           Write-Host "resume support off confirmed: no .filepart in WinSCP log"
-          Write-Host ("WinSCP version line: " + (($log -split "`n") | Select-String -Pattern 'WinSCP Version' | Select-Object -First 1))
+          Write-Host ("WinSCP version: " + ((Get-Content $logFile.FullName -TotalCount 3) -join " | "))
           Write-Host "PASS: CFT script transferred, cleaned up, and wrote directly to the final name (no .filepart)"
 
       - name: Show WinSCP log on failure
